@@ -9,15 +9,17 @@ from discriminator import Discriminator
 from generator import Generator
 from model import GAN
 import helper
+print(torch.__version__)
 
+'''
 articles_path = '..\\BBC News Summary\\News Articles'
 summaries_path = '..\\BBC News Summary\\Summaries'
 #Read data
 text_data = helper.read_articles(articles_path, summaries_path)
 text_data = helper.clean_dataframe(text_data)
 train_df, test_df = train_test_split(text_data, test_size=0.1)
+print(train_df)
 
-'''
 # Initialize model
 input_size = 100
 hidden_size = 50
