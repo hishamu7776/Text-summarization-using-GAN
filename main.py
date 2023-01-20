@@ -1,15 +1,18 @@
+import os
+import glob
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from sklearn.model_selection import train_test_split
 
+import torchtext
+#from torch.utils.data import DataLoader, Dataset
+#from torchtext.data import Dataset
 
-from discriminator import Discriminator
-from generator import Generator
-from model import GAN
-import helper
-print(torch.__version__)
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 '''
 articles_path = '..\\BBC News Summary\\News Articles'
