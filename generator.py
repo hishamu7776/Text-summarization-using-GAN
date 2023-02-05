@@ -14,3 +14,4 @@ class Generator(nn.Module):
         x = torch.relu(x)
         x = self.fc2(x)
         return x
+    

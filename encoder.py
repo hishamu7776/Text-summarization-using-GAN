@@ -12,7 +12,6 @@ class Encoder(nn.Module):
         self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, bidirectional=True)
         self.fc_hidden = nn.Linear(hidden_size*2, hidden_size)
         self.fc_cell = nn.Linear(hidden_size*2, hidden_size)
-        #self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, bidirectional=True)
         
     def forward(self, x):
         
@@ -25,7 +24,5 @@ class Encoder(nn.Module):
         
         hidden = self.fc_hidden(torch.cat((hidden[0:1], hidden[1:2]), dim=2))
         cell = self.fc_cell(torch.cat((cell[0:1], cell[1:2]), dim=2))
-        #hidden = torch.cat((hidden[-2,:,:], hidden[-1,:,:]), dim = 1)
-        #cell = torch.cat((cell[-2,:,:], cell[-1,:,:]), dim = 1)
 
         return encoder_states, hidden, cell
