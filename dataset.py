@@ -6,6 +6,9 @@ from torchtext.data.utils import get_tokenizer
 from torch.nn.utils.rnn import pad_sequence
 from sklearn.model_selection import train_test_split
 from torchtext.vocab import build_vocab_from_iterator
+from batch_sampler import BatchSamplerSimilarLength
+from torch.utils.data import DataLoader
+
 
 tokenizer = get_tokenizer("basic_english")
 
@@ -28,9 +31,11 @@ class Dataset:
             self.split_dataset(self.generate_binary(dataset))
             self.vocab = dataset.vocab
             self.vocab_size = dataset.vocab_size
+        self.PADDING_VALUE=self.vocab[self.PADDING_TOKEN]
         self.text_transform = lambda x: [self.vocab[token] for token in tokenizer(x)]
         vocab_itos = self.vocab.get_itos()
         self.vec_vocab_itos = np.vectorize(lambda x: vocab_itos[x])
+        self.prepare_batch()
 
                             
     def split_dataset(self, dataset):
@@ -44,25 +49,37 @@ class Dataset:
         vocab = build_vocab_from_iterator(self.yield_tokens(self.train_list), specials=self.special_tokens, max_tokens=max_token, min_freq = min_freq)
         vocab.set_default_index(vocab[self.UNKNOWN_TOKEN])
         return vocab
-
-    @staticmethod
-    def generate_binary(self):
-        self.binary_set = []
-        return
     
-    @staticmethod
-    def yield_tokens(data_iter):
-        for text, _ in data_iter:
-            yield tokenizer(text)
+    def prepare_batch(self):
+        if self.generator:
+            batch_size = int(self.config['ENCODER']['batch_size'])
+        else:
+            batch_size = int(self.config['DISCRIMINATOR']['batch_size'])
 
-    #text_max_len = 700
-    #summary_max_len = 300
+        self.train_loader = DataLoader(self.train_list, 
+                                batch_sampler=BatchSamplerSimilarLength(dataset = self.train_list,
+                                                                        tokenizer=tokenizer,
+                                                                        batch_size=batch_size),
+                                collate_fn=self.collate_batch)
+        self.valid_loader = DataLoader(self.train_list, 
+                                batch_sampler=BatchSamplerSimilarLength(dataset = self.valid_list,
+                                                                        tokenizer=tokenizer,
+                                                                        batch_size=batch_size,
+                                                                        shuffle=False),
+                                collate_fn=self.collate_batch)
+        self.test_loader = DataLoader(self.train_list, 
+                                batch_sampler=BatchSamplerSimilarLength(dataset = self.test_list, 
+                                                                        tokenizer=tokenizer,
+                                                                        batch_size=batch_size,
+                                                                        shuffle=False),
+                                collate_fn=self.collate_batch)
+    
     def collate_batch(self, batch):
         text_list, label_list = [], []
         if self.generator:
-            max_len = 1000
+            max_len = int(self.config['ENCODER']['max_len'])
         else:
-            max_len = 1000
+            max_len = int(self.config['DISCRIMINATOR']['max_len'])
         #print(type(batch)
         for (_text, _label) in batch:
             processed_text = torch.tensor(self.text_transform(_text)[:max_len])
@@ -83,4 +100,14 @@ class Dataset:
             return padded_text, padded_label
         else:
             return padded_text, torch.tensor(label_list)
-        
+
+
+    @staticmethod
+    def generate_binary(self):
+        self.binary_set = []
+        return
+    
+    @staticmethod
+    def yield_tokens(data_iter):
+        for text, _ in data_iter:
+            yield tokenizer(text)        
