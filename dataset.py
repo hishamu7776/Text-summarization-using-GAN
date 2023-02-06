@@ -90,7 +90,7 @@ class Dataset:
     
     def prepare_batch(self):
         if self.generator:
-            batch_size = int(self.config['ENCODER']['batch_size'])
+            batch_size = int(self.config['GENERATOR']['batch_size'])
         else:
             batch_size = int(self.config['DISCRIMINATOR']['batch_size'])
 
@@ -115,7 +115,7 @@ class Dataset:
     def collate_batch(self, batch):
         text_list, label_list = [], []
         if self.generator:
-            max_len = int(self.config['ENCODER']['max_len'])
+            max_len = int(self.config['GENERATOR']['max_len'])
         else:
             max_len = int(self.config['DISCRIMINATOR']['max_len'])
         #print(type(batch)

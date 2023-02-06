@@ -3,13 +3,12 @@ import torch
 import torch.nn as nn
 
 class Encoder(nn.Module):
-    def __init__(self, input_size, embedding_size, hidden_size, num_layers, p):
+    def __init__(self, vocab_size, embedding_size, hidden_size, num_layers):
         super(Encoder, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        
         #self.dropout = nn.Dropout(p)
-        self.embedding = nn.Embedding(input_size, embedding_size)
+        self.embedding = nn.Embedding(vocab_size, embedding_size)
         self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, bidirectional=True)
         self.fc_hidden = nn.Linear(hidden_size*2, hidden_size)
         self.fc_cell = nn.Linear(hidden_size*2, hidden_size)
@@ -29,20 +28,20 @@ class Encoder(nn.Module):
         return encoder_states, hidden, cell
     
 class Decoder(nn.Module):
-    def __init__(self, input_size, embedding_size, hidden_size, output_size,num_layers, p):
+    def __init__(self, vocab_size, embedding_size, hidden_size,num_layers):
         
         super(Decoder, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         #self.dropout = nn.Dropout(p)
         
-        self.embedding = nn.Embedding(input_size, embedding_size)
+        self.embedding = nn.Embedding(vocab_size, embedding_size)
         self.rnn = nn.LSTM(hidden_size*2 + embedding_size, hidden_size, num_layers)
         
         self.energy = nn.Linear(hidden_size*3,1)
         self.softmax = nn.Softmax(dim=0)
         self.relu = nn.ReLU()
-        self.fc = nn.Linear(hidden_size, output_size)
+        self.fc = nn.Linear(hidden_size, vocab_size)
         
     def forward(self, x, encoder_states, hidden, cell):
         
@@ -77,20 +76,21 @@ class Decoder(nn.Module):
         return predictions, hidden, cell
 
 class Generator(nn.Module):
-    def __init__(self, encoder, decoder):
+    def __init__(self, encoder, decoder, device, target_vocab_size):
         
         super(Generator, self).__init__()
         self.encoder = encoder
         self.decoder = decoder
+        self.device = device
+        self.target_vocab_size = target_vocab_size
         
         
-    def forward(self, source, target, teacher_force_ratio=0.5):
+    def forward(self, source, target,  teacher_force_ratio=0.5):
         
         batch_size = source.shape[1]
         target_len = target.shape[0]
-        target_vocab_size = len(vocab)
         
-        outputs = torch.zeros(target_len, batch_size, target_vocab_size).to(device)
+        outputs = torch.zeros(target_len, batch_size, self.target_vocab_size).to(self.device)
         
         encoder_states, hidden, cell = self.encoder(source)
         #Grab start token

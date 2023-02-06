@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class Discriminator(nn.Module):
-    def __init__(self, vocab_size, embedding_dim, hidden_dim, num_layers, output_dim, bidirectional, dropout):
+    def __init__(self, vocab_size, embedding_dim, hidden_dim, num_layers = 2, output_dim = 2, bidirectional=True, dropout=0.5):
         super(Discriminator, self).__init__()
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
         self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers, bidirectional=bidirectional, dropout=dropout)
