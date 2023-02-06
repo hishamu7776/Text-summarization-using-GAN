@@ -1,4 +1,5 @@
 import os
+import pandas as pd
 import time
 from tqdm import tqdm
 from pathlib import Path
@@ -26,11 +27,13 @@ class Trainer:
         self.load_model()
         self.set_loss()
         self.set_optimzer()
+        self.train()
+        self.save_result()
 
 
     def load_model(self):
         if self.trainer == 'GENERATOR':
-            if bool(self.config['GENERATOR']['pretrain']):
+            if self.config['GENERATOR']['pretrained'] == 'True':
                 path = Path(self.config['GENERATOR']['model_path'])
                 self.model = self.load_pretrained(path)
             else:
@@ -44,7 +47,7 @@ class Trainer:
                                       int(self.config['DECODER']['num_layers'])).to(self.device)
                 self.model = Generator(encoder_net, decoder_net, self.device, self.vocab_size).to(self.device)            
         elif self.trainer == 'DISCRIMINATOR':
-            if bool(self.config['DISCRIMINATOR']['pretrain']):
+            if self.config['DISCRIMINATOR']['pretrained'] == 'True':
                 path = Path(self.config['DISCRIMINATOR']['model_path'])
                 self.model = self.load_pretrained(path)
             else:                
@@ -107,9 +110,9 @@ class Trainer:
 
     def set_optimzer(self):
         if self.trainer == 'GENERATOR':
-            self.optimizer = optim.Adam(self.generator.parameters(), lr=float(self.config['GENERATOR']['learning_rate']))
+            self.optimizer = optim.Adam(self.model.parameters(), lr=float(self.config['GENERATOR']['learning_rate']))
         elif self.trainer == 'DISCRIMINATOR':
-            self.optimizer = optim.Adam(self.discriminator.parameters(), lr=float(self.config['DISCRIMINATOR']['learning_rate']))
+            self.optimizer = optim.Adam(self.model.parameters(), lr=float(self.config['DISCRIMINATOR']['learning_rate']))
         else:
             self.optimizer = None
 
@@ -118,8 +121,8 @@ class Trainer:
             output = self.model(input, target)
             output_dim = output.shape[-1]
             output = output[1:].view(-1, output_dim)
-            summary = summary[1:].view(-1)
-            loss = self.criterion(output, summary)
+            target = target[1:].view(-1)
+            loss = self.criterion(output, target)
             return loss, output
         elif self.trainer == 'DISCRIMINATOR':
             loss = 0
@@ -128,13 +131,17 @@ class Trainer:
     
     def compute_accuracy(self, target, output):
         if self.trainer == 'GENERATOR':
+            target = target[1:].view(-1)
             output_indexes = output.argmax(dim=1)
             accuracy = ev.compute_generator_accuracy(target, output_indexes)
             return accuracy
         elif self.trainer == 'DISCRIMINATOR':
             loss = 0
             return loss
-        return
+    def save_result(self):
+        df = pd.DataFrame({'Loss': self.minibatch_loss_list,
+            'Accuracy': self.minibatch_accuracy_list})
+        df.to_csv(os.path.join(self.config['DEFAULT']['target_folder'],f'{self.trainer}.csv'), index=False)
 
     @staticmethod
     def load_pretrained(path):

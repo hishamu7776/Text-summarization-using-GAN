@@ -44,7 +44,7 @@ class PrepareData:
         
     def preprocess(self):
         self.summary_data = []
-        for text,summary in list(self.dataset)[:10]:
+        for text,summary in list(self.dataset):
             text = self.replace_contraction(text)
             summary = self.replace_contraction(summary)
             text = self.spacy(text)
