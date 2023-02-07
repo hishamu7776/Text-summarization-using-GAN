@@ -11,8 +11,8 @@ class PrepareData:
         self.spacy = spacy.load("en_core_web_sm")
         self.stop_words = list(self.spacy.Defaults.stop_words)
         self.read_data()
-        #self.summary_data = list(self.dataset)
-        self.preprocess()
+        self.summary_data = list(self.dataset)
+        #self.preprocess()
 
     def read_data(self):
         if self.config['DEFAULT']['type'] == 'TEXT':

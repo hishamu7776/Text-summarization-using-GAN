@@ -73,6 +73,7 @@ class Dataset:
             self.split_dataset(dataset.summary_data)
             self.vocab = self.get_vocab()
             self.vocab_size = len(self.vocab)
+            print(self.vocab_size)
         else:
             self.dataset = dataset
             self.split_dataset(self.generate_binary())

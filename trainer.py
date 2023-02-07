@@ -69,7 +69,7 @@ class Trainer:
         epochs = int(self.config[self.trainer]['epochs'])
         for epoch in range(epochs):
             total = 0
-            accuracy = 0
+            correct = 0
             self.model.train()
             for batch_idx, (input, target) in tqdm(enumerate(self.train_loader)):
                 input = input.to(self.device)
@@ -85,7 +85,8 @@ class Trainer:
                 elif self.trainer == 'DISCRIMINATOR':
                     _, predicted = torch.max(output.data, 1)
                     total += target.size(0)
-                    accuracy += (predicted == target).sum().item()
+                    correct += (predicted == target).sum().item()
+                    accuracy = 100*(correct/total)
 
                 # ## LOGGING
                 self.minibatch_loss_list.append(loss.item())
