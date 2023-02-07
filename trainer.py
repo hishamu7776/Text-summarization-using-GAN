@@ -51,14 +51,14 @@ class Trainer:
                 path = Path(self.config['DISCRIMINATOR']['model_path'])
                 self.model = self.load_pretrained(path)
             else:                
-                self.model = Discriminator(self.vocab_size, 
-                                              int(self.config['DISCRIMINATOR']['embedding_dim']), 
-                                              int(self.config['DISCRIMINATOR']['hidden_dim']),
-                                              int(self.config['DISCRIMINATOR']['num_layers']),
-                                              int(self.config['DISCRIMINATOR']['output_dim']),
-                                              int(self.config['DISCRIMINATOR']['dropout'])
+                self.model = Discriminator(vocab_size=self.vocab_size, 
+                                              embedding_dim=int(self.config['DISCRIMINATOR']['embedding_dim']), 
+                                              hidden_dim=int(self.config['DISCRIMINATOR']['hidden_dim']),
+                                              num_layers=int(self.config['DISCRIMINATOR']['num_layers']),
+                                              output_dim=int(self.config['DISCRIMINATOR']['output_dim']),
+                                              dropout = float(self.config['DISCRIMINATOR']['dropout'])
                                               )
-                self.model = self.discriminator.to(self.device)
+                self.model = self.model.to(self.device)
         else:
             self.generator = self.load_pretrained('generator_path')
             self.discriminator = self.load_pretrained('discriminator_path')
@@ -68,6 +68,8 @@ class Trainer:
         self.minibatch_loss_list, self.minibatch_accuracy_list = [],[]
         epochs = int(self.config[self.trainer]['epochs'])
         for epoch in range(epochs):
+            total = 0
+            accuracy = 0
             self.model.train()
             for batch_idx, (input, target) in tqdm(enumerate(self.train_loader)):
                 input = input.to(self.device)
@@ -78,7 +80,12 @@ class Trainer:
                 self.optimizer.step()
                 self.optimizer.zero_grad() # zero gradients again
                 #Compute Accuracy
-                accuracy = self.compute_accuracy(target, output)
+                if self.trainer == 'GENERATOR':
+                    accuracy = self.compute_accuracy(target, output)
+                elif self.trainer == 'DISCRIMINATOR':
+                    _, predicted = torch.max(output.data, 1)
+                    total += target.size(0)
+                    accuracy += (predicted == target).sum().item()
 
                 # ## LOGGING
                 self.minibatch_loss_list.append(loss.item())
@@ -94,7 +101,7 @@ class Trainer:
         elapsed = (time.time() - start_time)/60
         print(f'Time elapsed: {elapsed:.2f} min')
         torch.save(self.model.state_dict(), os.path.join(self.config['DEFAULT']['target_folder'],f'final_{self.trainer}_state_dict.pt'))
-        torch.save(self.model.state_dict(), os.path.join(self.config['DEFAULT']['target_folder'],f'final_{self.trainer}.pt'))
+        torch.save(self.model, os.path.join(self.config['DEFAULT']['target_folder'],f'final_{self.trainer}.pt'))
         
     
     def train_gan(self):
@@ -125,8 +132,9 @@ class Trainer:
             loss = self.criterion(output, target)
             return loss, output
         elif self.trainer == 'DISCRIMINATOR':
-            loss = 0
-            return loss
+            logits = self.model(input)
+            loss = self.criterion(logits, target)
+            return loss, logits
         return
     
     def compute_accuracy(self, target, output):

@@ -1,13 +1,19 @@
 import random
 import numpy as np
+from pathlib import Path
+from sklearn.model_selection import train_test_split
+import evaluators as ev
+
 import torch
 import torch.nn as nn
 from torch.utils.data import Sampler
-from torchtext.data.utils import get_tokenizer
-from torch.nn.utils.rnn import pad_sequence
-from sklearn.model_selection import train_test_split
-from torchtext.vocab import build_vocab_from_iterator
 from torch.utils.data import DataLoader
+from torch.nn.utils.rnn import pad_sequence
+from torchtext.data.utils import get_tokenizer
+from torchtext.vocab import build_vocab_from_iterator
+
+from generator import Generator, Encoder, Decoder
+
 
 
 tokenizer = get_tokenizer("basic_english")
@@ -52,7 +58,8 @@ class BatchSamplerSimilarLength(Sampler):
 
 class Dataset:
     def __init__(self, dataset, config, generator=True):
-        self.size = len(dataset.summary_data)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        torch.cuda.empty_cache()
         self.dataset = dataset
         self.config = config
         self.generator = generator
@@ -62,11 +69,13 @@ class Dataset:
         self.EOS_TOKEN = self.config['DEFAULT']['EOS_TOKEN']
         self.special_tokens = ['<PAD>', '<UNK>','<BOS>', '<EOS>']
         if generator:
+            self.size = len(dataset.summary_data)            
             self.split_dataset(dataset.summary_data)
             self.vocab = self.get_vocab()
             self.vocab_size = len(self.vocab)
         else:
-            self.split_dataset(self.generate_binary(dataset))
+            self.dataset = dataset
+            self.split_dataset(self.generate_binary())
             self.vocab = dataset.vocab
             self.vocab_size = dataset.vocab_size
         self.PADDING_VALUE=self.vocab[self.PADDING_TOKEN]
@@ -93,7 +102,6 @@ class Dataset:
             batch_size = int(self.config['GENERATOR']['batch_size'])
         else:
             batch_size = int(self.config['DISCRIMINATOR']['batch_size'])
-
         self.train_loader = DataLoader(self.train_list, 
                                 batch_sampler=BatchSamplerSimilarLength(dataset = self.train_list,
                                                                         tokenizer=tokenizer,
@@ -120,17 +128,18 @@ class Dataset:
             max_len = int(self.config['DISCRIMINATOR']['max_len'])
         #print(type(batch)
         for (_text, _label) in batch:
-            processed_text = torch.tensor(self.text_transform(_text)[:max_len])
-            text_list.append(processed_text)
+            
+            
             if self.generator:
+                processed_text = torch.tensor(self.text_transform(_text))
+                text_list.append(processed_text)
                 processed_label = torch.tensor(self.text_transform(_label))
                 label_list.append(processed_label)
             else:
-                label_list.append(int(_label)) 
-
-            #target_max_len
-                
-        text_list[0] = nn.ConstantPad1d((0, max_len - text_list[0].shape[0]), 0)(text_list[0])
+                processed_text = torch.tensor(self.text_transform(_text)[:max_len])
+                text_list.append(processed_text)
+                text_list[0] = nn.ConstantPad1d((0, max_len - text_list[0].shape[0]), 0)(text_list[0])
+                label_list.append(int(_label))                 
         
         padded_text = pad_sequence(text_list, padding_value=self.PADDING_VALUE, batch_first=False)
         if self.generator:
@@ -139,11 +148,36 @@ class Dataset:
         else:
             return padded_text, torch.tensor(label_list)
 
-
-    @staticmethod
     def generate_binary(self):
-        self.binary_set = []
-        return
+        generator_path = Path(self.config['GENERATOR']['model_path'])
+        self.gen_model = torch.load(generator_path)
+        self.gen_model.eval()
+        binary = []
+        for text, summary in self.dataset.train_list:
+            fake = self.generate_summary(text, summary)
+            binary.append((summary, 1))
+            binary.append((fake, 0))
+        return binary
+
+
+    def generate_summary(self, text, summary):
+        input_tensor = torch.tensor(self.dataset.text_transform(text)).unsqueeze(0)
+        input_tensor = input_tensor.permute(1,0).to(self.device).long()
+        output_tensor = torch.tensor(self.dataset.text_transform(summary)).unsqueeze(0)
+        output_tensor = output_tensor.permute(1,0).to(self.device).long()
+        self.gen_model.eval()
+        with torch.no_grad():
+            output = self.gen_model(input_tensor, output_tensor)
+        output_dim = output.shape[-1]
+        output = output[1:].view(-1, output_dim)
+        word_indexes = output.argmax(dim=1).squeeze(0).tolist()
+        word_indexes = [word for word in word_indexes if word is not self.dataset.PADDING_VALUE]
+        if len(word_indexes)>0:
+            summary = " ".join(self.dataset.vec_vocab_itos(word_indexes))
+        else:
+            return "No summary generated"
+        return summary
+
     
     @staticmethod
     def yield_tokens(data_iter):

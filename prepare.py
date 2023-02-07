@@ -11,6 +11,7 @@ class PrepareData:
         self.spacy = spacy.load("en_core_web_sm")
         self.stop_words = list(self.spacy.Defaults.stop_words)
         self.read_data()
+        #self.summary_data = list(self.dataset)
         self.preprocess()
 
     def read_data(self):
@@ -28,7 +29,7 @@ class PrepareData:
             summaries = FileOpener(summaries, mode='t', encoding = self.config['DEFAULT']['encoding'])
             summaries = StreamReader(summaries)
             summaries = summaries.map(self.select_text)  
-            self.dataset = documents.zip(summaries)
+            self.dataset = summaries.zip(documents)
         
         elif self.config['DEFAULT']['type'] == 'CSV':
             datapipe = FileLister(root=self.config['DEFAULT']['csv_folder'])
@@ -44,7 +45,7 @@ class PrepareData:
         
     def preprocess(self):
         self.summary_data = []
-        for text,summary in list(self.dataset):
+        for summary,text in list(self.dataset):
             text = self.replace_contraction(text)
             summary = self.replace_contraction(summary)
             text = self.spacy(text)
