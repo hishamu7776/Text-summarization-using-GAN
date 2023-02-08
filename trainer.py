@@ -64,10 +64,15 @@ class Trainer:
             self.discriminator = self.load_pretrained('discriminator_path')
     
     def train(self):
+        self.minibatch_discriminator_loss = []
+        self.minibatch_generator_loss = []
+        self.minibatch_accuracy = []
+        self.epochs = int(self.config[self.trainer]['epochs'])
+        if self.trainer == 'GAN':
+            self.train_gan()
+            return
         start_time = time.time()
-        self.minibatch_loss_list, self.minibatch_accuracy_list = [],[]
-        epochs = int(self.config[self.trainer]['epochs'])
-        for epoch in range(epochs):
+        for epoch in range(self.epochs):
             total = 0
             correct = 0
             self.model.train()
@@ -87,12 +92,19 @@ class Trainer:
                     total += target.size(0)
                     correct += (predicted == target).sum().item()
                     accuracy = 100*(correct/total)
+                else:
+                    break
 
                 # ## LOGGING
-                self.minibatch_loss_list.append(loss.item())
+                if self.trainer == 'GENERATOR':
+                    self.minibatch_generator_loss.append(loss.item())
+                    self.minibatch_discriminator_loss.append(0)
+                elif self.trainer == 'DISCRIMINATOR':
+                    self.minibatch_generator_loss.append(0)
+                    self.minibatch_discriminator_loss.append(loss.item())
                 self.minibatch_accuracy_list.append(accuracy)
                 if not batch_idx % 50:
-                    print(f'Epoch: {epoch+1:03d}/{epochs:03d} '
+                    print(f'Epoch: {epoch+1:03d}/{self.epochs:03d} '
                         f'| Batch {batch_idx:04d}/{len(self.train_loader):04d} '
                         f'| Loss: {loss:.4f}'
                         f'| Accuracy: {accuracy:.4f} '
@@ -106,6 +118,62 @@ class Trainer:
         
     
     def train_gan(self):
+        start_time = time.time()
+        for epoch in range(self.epochs):
+            for batch_idx, (text, summaries) in tqdm(enumerate(self.train_loader)):
+                self.generator.train()
+                self.discriminator.train()
+                real_summaries = summaries.to(self.device)
+                real_text = text.to(self.device)
+
+                # Train the discriminator
+                self.discriminator.zero_grad()
+                real_outputs = self.discriminator(real_text)
+                real_labels = torch.ones(real_outputs.shape).to(self.device)
+                self.discriminator.train()
+                real_loss = self.criterion(real_outputs, real_labels)
+
+                fake_summaries = self.generator(real_text, real_summaries).detach() 
+                fake_summaries = torch.argmax(fake_summaries, dim=2)
+                fake_outputs = self.discriminator(fake_summaries)
+                fake_labels = torch.zeros(fake_outputs.shape).to(self.device)
+                fake_loss = self.criterion(fake_outputs, fake_labels)
+                
+                dis_loss = 0.5 * (real_loss + fake_loss)
+                dis_loss.backward()
+                self.dis_optimizer.step()
+
+                # Train the generator
+                self.generator.zero_grad()
+                fake_outputs = self.discriminator(fake_summaries)
+                fake_labels = torch.ones(fake_outputs.shape).to(self.device)
+                gen_loss = self.criterion(fake_outputs, fake_labels)
+                gen_loss.backward()
+                self.gen_optimizer.step()
+                #Compute Accuracy
+                output = fake_summaries.view(-1)
+                target = summaries.view(-1)
+                accuracy = self.compute_accuracy(target, output)
+
+                # ## LOGGING
+                self.minibatch_discriminator_loss.append(dis_loss.item())
+                self.minibatch_generator_loss.append(gen_loss.item())
+                self.minibatch_accuracy.append(accuracy)
+                if not batch_idx % 50:
+                    print(f'Epoch: {epoch+1:03d}/{self.epochs:03d} '
+                        f'| Batch {batch_idx:04d}/{len(self.train_loader):04d} '
+                        f'| Discriminator Loss: {dis_loss:.4f}'
+                        f'| Generator Loss: {gen_loss:.4f}'
+                        f'| Accuracy: {accuracy:.4f} '
+                        )
+            self.generator.eval()
+            self.discriminator.eval()
+            if epoch%2 == 0:
+                torch.save(self.generator, os.path.join(os.path.join(self.config['DEFAULT']['target_folder'],f'{self.trainer}_GEN_EPOCH{epoch}.pt')))
+                torch.save(self.discriminator, os.path.join(os.path.join(self.config['DEFAULT']['target_folder'],f'{self.trainer}_DIS_EPOCH{epoch}.pt')))
+            elapsed = (time.time() - start_time)/60
+            print(f'Time elapsed: {elapsed:.2f} min')            
+
         return
     
     def set_loss(self):
@@ -122,7 +190,9 @@ class Trainer:
         elif self.trainer == 'DISCRIMINATOR':
             self.optimizer = optim.Adam(self.model.parameters(), lr=float(self.config['DISCRIMINATOR']['learning_rate']))
         else:
-            self.optimizer = None
+            lr = float(self.config[self.trainer]['learning_rate'])
+            self.gen_optimizer = optim.Adam(self.generator.parameters(), lr=lr)
+            self.dis_optimizer = optim.Adam(self.discriminator.parameters(), lr=lr)
 
     def compute_loss(self, input, target):
         if self.trainer == 'GENERATOR':
@@ -147,9 +217,12 @@ class Trainer:
         elif self.trainer == 'DISCRIMINATOR':
             loss = 0
             return loss
+        else:
+            return ev.compute_generator_accuracy(target, output_indexes)
     def save_result(self):
-        df = pd.DataFrame({'Loss': self.minibatch_loss_list,
-            'Accuracy': self.minibatch_accuracy_list})
+        df = pd.DataFrame({'Discriminator Loss': self.minibatch_discriminator_loss,
+                           'Generator Loss': self.minibatch_generator_loss,
+                           'Accuracy': self.minibatch_accuracy_list})
         df.to_csv(os.path.join(self.config['DEFAULT']['target_folder'],f'{self.trainer}.csv'), index=False)
 
     @staticmethod
