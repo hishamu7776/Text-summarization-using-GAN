@@ -121,53 +121,58 @@ class Trainer:
         start_time = time.time()
         for epoch in range(self.epochs):
             for batch_idx, (text, summaries) in tqdm(enumerate(self.train_loader)):
-                self.generator.train()
-                self.discriminator.train()
-                real_summaries = summaries.to(self.device)
-                real_text = text.to(self.device)
-
-                # Train the discriminator
-                self.discriminator.zero_grad()
-                real_outputs = self.discriminator(real_text)
-                real_labels = torch.ones(real_outputs.shape).to(self.device)
-                self.discriminator.train()
-                real_loss = self.criterion(real_outputs, real_labels)
-
-                fake_summaries = self.generator(real_text, real_summaries).detach() 
-                fake_summaries = torch.argmax(fake_summaries, dim=2)
-                fake_outputs = self.discriminator(fake_summaries)
-                fake_labels = torch.zeros(fake_outputs.shape).to(self.device)
-                fake_loss = self.criterion(fake_outputs, fake_labels)
                 
-                dis_loss = 0.5 * (real_loss + fake_loss)
-                dis_loss.backward()
+                #Change device
+                summary = summary.to(self.device)
+                text = text.to(self.device)
+
+                #Train the discriminator
+                self.dis_optimizer.zero_grad()
+                real_output = self.discriminator(summary)
+                ones = torch.ones(real_output.shape).to(self.device)
+                real_loss = self.criterion(real_output, ones)
+
+                
+                generated_summary = self.generator(text, summary)
+                generated_summary = torch.argmax(generated_summary, dim=2)
+                discriminator_output = self.discriminator(generated_summary)
+                zeros = torch.zeros(discriminator_output.shape).to(self.device)
+                generated_loss = self.criterion(discriminator_output, zeros)
+
+                discriminator_loss = 0.5 * (real_loss + generated_loss)
+                discriminator_loss.backward()
                 self.dis_optimizer.step()
 
                 # Train the generator
-                self.generator.zero_grad()
-                fake_outputs = self.discriminator(fake_summaries)
-                fake_labels = torch.ones(fake_outputs.shape).to(self.device)
-                gen_loss = self.criterion(fake_outputs, fake_labels)
-                gen_loss.backward()
+                # Zero the gradients
+                self.gen_optimizer.zero_grad()
+                
+                # Calculate the loss
+                generator_loss = self.compute_generator_loss(discriminator_output)
+
+                # Calculate the gradients
+                generator_loss.backward()
+                
+                # Update the parameters            
                 self.gen_optimizer.step()
+
                 #Compute Accuracy
-                output = fake_summaries.view(-1)
+                output = generated_summary.view(-1)
                 target = summaries.view(-1)
                 accuracy = self.compute_accuracy(target, output)
 
                 # ## LOGGING
-                self.minibatch_discriminator_loss.append(dis_loss.item())
-                self.minibatch_generator_loss.append(gen_loss.item())
+                self.minibatch_discriminator_loss.append(discriminator_loss.item())
+                self.minibatch_generator_loss.append(generator_loss.item())
                 self.minibatch_accuracy.append(accuracy)
                 if not batch_idx % 50:
                     print(f'Epoch: {epoch+1:03d}/{self.epochs:03d} '
                         f'| Batch {batch_idx:04d}/{len(self.train_loader):04d} '
-                        f'| Discriminator Loss: {dis_loss:.4f}'
-                        f'| Generator Loss: {gen_loss:.4f}'
+                        f'| Discriminator Loss: {discriminator_loss:.4f}'
+                        f'| Generator Loss: {generator_loss:.4f}'
                         f'| Accuracy: {accuracy:.4f} '
                         )
-            self.generator.eval()
-            self.discriminator.eval()
+
             if epoch%2 == 0:
                 torch.save(self.generator, os.path.join(os.path.join(self.config['DEFAULT']['target_folder'],f'{self.trainer}_GEN_EPOCH{epoch}.pt')))
                 torch.save(self.discriminator, os.path.join(os.path.join(self.config['DEFAULT']['target_folder'],f'{self.trainer}_DIS_EPOCH{epoch}.pt')))
@@ -207,6 +212,34 @@ class Trainer:
             loss = self.criterion(logits, target)
             return loss, logits
         return
+    def compute_generator_loss(discriminator_output):
+        #Convert discriminator output to [0,1] to avoid negative values.
+        discriminator_output = torch.sigmoid(discriminator_output)
+        discriminator_output_requires_grad = discriminator_output.detach().requires_grad_()
+
+        #Compute reward, discriminator as reward
+        reward = discriminator_output_requires_grad.squeeze()
+        
+        # Compute the log probability of the discriminator output being positive
+        log_p_positive = torch.log(discriminator_output + 1e-8)
+        log_p_positive = log_p_positive.detach().requires_grad_()
+            
+        # Compute the log probability of the discriminator output being negative
+        log_p_negative = torch.log(1 - discriminator_output + 1e-8)
+        log_p_negative = log_p_negative.detach().requires_grad_()
+        
+        R_G_D = log_p_positive * reward
+        R_G_D = R_G_D.detach().requires_grad_()
+        
+
+        JML = log_p_negative * (1 - reward)
+        JML = JML.detach().requires_grad_()
+        
+        # Compute the loss
+        loss = -torch.mean(R_G_D + JML)
+        loss = loss.detach().requires_grad_()
+        
+        return loss
     
     def compute_accuracy(self, target, output):
         if self.trainer == 'GENERATOR':

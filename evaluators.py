@@ -7,5 +7,4 @@ def compute_generator_accuracy(y_true, y_pred):
 
 def generate_summary(model, input):
     summary = ''
-    
     return summary
